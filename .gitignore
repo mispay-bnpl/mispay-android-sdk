@@ -13,3 +13,8 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Local demo credentials (never commit) and local AAR packaging test artifacts
+/app/credentials.properties
+/app/libs/
+/mispaysdk.aar.sha1

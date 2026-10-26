@@ -33,17 +33,24 @@ android {
     buildFeatures {
         viewBinding = true
     }
+    testOptions {
+        // android.util.Log calls inside library code become silent no-ops in local
+        // JVM unit tests instead of throwing "not mocked".
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
-
-    implementation("androidx.core:core-ktx:1.12.0")
+    // Minimal consumer-facing runtime set. The SDK code uses AppCompatActivity,
+    // OnBackPressedCallback and lifecycleScope (all via appcompat), a Material3
+    // theme (material) and a ConstraintLayout-based WebView layout.
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.10.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-    implementation("androidx.navigation:navigation-fragment-ktx:2.6.0")
-    implementation("androidx.navigation:navigation-ui-ktx:2.6.0")
     testImplementation("junit:junit:4.13.2")
+    // Local JVM unit tests need a real org.json implementation (the Android jar only
+    // provides stubs). Test-only dependency — does not ship in the AAR.
+    testImplementation("org.json:json:20231013")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }
