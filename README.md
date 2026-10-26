@@ -105,6 +105,137 @@ implementation(files("libs/mispaysdk.aar"))
 
 ---
 
+## **Integrate the SDK Into Your Existing App**
+
+This section is for merchants adding the SDK to their **own** application. To try the flow first, run the example app above.
+
+**Prerequisites**
+
+- Android Studio Ladybug (2024.1.1) or higher.
+- An app with `minSdk 24` or higher (`compileSdk 34` recommended).
+- The latest `mispaysdk.aar` and your credentials (`x-app-id`, `x-app-secret`) from the MIS Pay Technical Team.
+
+### **1. Add the AAR and Its Dependencies**
+
+Copy the AAR into your app module and declare it in `app/build.gradle.kts`:
+
+```kotlin
+dependencies {
+    implementation(files("libs/mispaysdk.aar"))
+
+    // Required by the SDK. A local AAR carries no dependency metadata,
+    // so these are NOT pulled in automatically — declare them yourself
+    // (skip any your app already has at these versions or newer):
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("com.google.android.material:material:1.10.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+}
+```
+
+> **Warning:** if `appcompat` (or the others) is missing, your app builds fine but **crashes with `NoClassDefFoundError` the moment the checkout screen opens**. If you see that crash, come back to this step.
+
+### **2. Manifest — Nothing to Add**
+
+The AAR's manifest is merged into your app automatically. It already declares the `INTERNET` and location permissions and the SDK's checkout activity (with its own theme) — **do not** add them again.
+
+Optional: the checkout WebView auto-grants geolocation prompts. If you want the customer's location prefilled, request `ACCESS_FINE_LOCATION` at runtime like the demo does (see `LibraryDemoActivity`); checkout works without it.
+
+### **3. Initialize the SDK**
+
+Once per app start, before the first checkout — e.g. in your `Application`:
+
+```kotlin
+import com.finbyte.mispaysdk.MISPay
+import com.finbyte.mispaysdk.MISPayEnvironment
+
+override fun onCreate() {
+    super.onCreate()
+    MISPay.initialize(
+        appId = "YOUR_X_APP_ID",      // from the MIS Pay Technical Team
+        appSecret = "YOUR_X_APP_SECRET",
+        environment = MISPayEnvironment.SANDBOX   // or PRODUCTION, or Custom("https://…")
+    )
+}
+```
+
+`MISPayEnvironment.Custom(baseUrl)` requires `https://`. Keep the secret out of version control and logs.
+
+### **4. Build the Order and Start Checkout**
+
+```kotlin
+import com.finbyte.mispaysdk.MISPay
+import com.finbyte.mispaysdk.MISPayResult
+import com.finbyte.mispaysdk.model.*
+
+val request = CheckoutRequest(
+    orderId = "ORDER-${System.currentTimeMillis()}",   // unique per order
+    totalPrice = "215",          // all amounts are numeric STRINGS, by API contract
+    shippingAmount = "0",
+    vat = "15",
+    purchaseAmount = "200",      // must equal totalPrice + shippingAmount + vat − discount.amount
+    purchaseCurrency = "SAR",
+    lang = "en",                 // "en" or "ar"
+    discount = Discount(percentage = "15", amount = "30", voucherName = "MIS-30"), // optional
+    customerDetails = CustomerDetails(
+        mobileNumber = "+966520006780",   // mandatory: 05…, 9665… or +9665… format
+        firstName = "First", lastName = "Last", email = "customer@example.com"
+    ),
+    orderDetails = OrderDetails(
+        items = listOf(
+            OrderItem(
+                quantity = "2", unitPrice = "100",          // mandatory, numeric strings
+                nameEnglish = "Item name",                   // nameArabic or nameEnglish required
+                id = "OR12345", sku = "1234568abcd",
+                itemUrl = "https://itemurl.com", imageUrl = "https://imageurl.com"
+            )
+        )
+    ),
+    shippingDetails = ShippingDetails(city = "riyadh", district = "riyadh", line1 = "street"), // optional
+    callbackUri = "https://example.com/mispay-callback"  // required when your MIS Pay callback setting is "Dynamic"
+)
+
+MISPay.startCheckout(
+    activity = this,
+    request = request,
+    onCheckoutStarted = { url, trackId ->
+        // Checkout page opened — persist trackId if you want to poll status server-side.
+    }
+) { result ->
+    when (result) {
+        is MISPayResult.Success  -> verifyTokenServerSide(result.token)  // see step 5
+        is MISPayResult.Cancelled -> show("Customer left the checkout")
+        is MISPayResult.Error     -> show("Error ${result.exception.meCode ?: ""}: ${result.exception.message}")
+    }
+}
+```
+
+Guarantees: the callback runs on the **main thread**, exactly **once** per call. Only one checkout can be active at a time — a second call fails fast with `MISPayResult.Error`. Request-validation problems are delivered to the callback as `Error` (never thrown); the only thrown exception is `IllegalStateException` if you skipped `MISPay.initialize`.
+
+> **Amount formula:** keep `totalPrice + shippingAmount + vat − discount.amount = purchaseAmount` exact — the SDK logs a warning on mismatch and the MIS Pay API **rejects** mismatches with `ME18`.
+
+ProGuard/R8 needs no extra keep rules — consumer rules ship inside the AAR.
+
+### **5. Verify the Token Server-Side**
+
+`MISPayResult.Success(token)` means the customer finished the MIS Pay pages — the token encodes the payment outcome and **must be verified by your backend** (see [doc.mispay.co](https://doc.mispay.co)). Authoritative fallbacks that work even if your app process is killed: your `callbackUri` webhook and `GET /track-checkout/{trackId}` polling with the `trackId` from `onCheckoutStarted`.
+
+### **6. Troubleshooting**
+
+| Symptom / code | Meaning and fix |
+| --- | --- |
+| `NoClassDefFoundError` on checkout open | Missing transitive dependency — see step 1. |
+| `ME01` | Credentials rejected — check `appId`/`appSecret`. |
+| `ME03` | Merchant application not found — wrong `appId` or environment. |
+| `ME04` | Session cache missing — call `MISPay.initialize` before `startCheckout`. |
+| `ME10` / `ME11` | Authorization token invalid/expired — the SDK refreshes and retries once automatically; persistent failures mean credentials/environment mismatch. |
+| `ME18` | Order amounts don't satisfy the purchase-amount formula — fix the amounts. |
+| `ME97` | `callbackUri` missing — required for accounts with a Dynamic callback setting. |
+| `E9997` | Unexpected MIS Pay server error — retry, and report with the `x-trace-id` header if captured. |
+
+**Next steps:** full function reference in [FUNCTIONS.md](FUNCTIONS.md) · official docs: [doc.mispay.co](https://doc.mispay.co)
+
+---
+
 ## **Repository Structure**
 
 ```
@@ -137,7 +268,7 @@ implementation(files("libs/mispaysdk.aar"))
 
 1. Run the demo app and tap **Pay with MISPay** to see the full checkout flow (token → start-checkout → hosted checkout pages → typed result).
 2. Refer to `app/src/main/java/com/finbyte/mispay_android_sdk/LibraryDemoActivity.kt` for implementation details of the MISPay SDK — it initializes the SDK, builds the docs sample order and handles every result type.
-3. To integrate the SDK into your own app, follow the installation steps and the full function reference in [FUNCTIONS.md](FUNCTIONS.md).
+3. To integrate the SDK into your own app, follow [Integrate the SDK Into Your Existing App](#integrate-the-sdk-into-your-existing-app) above and the full function reference in [FUNCTIONS.md](FUNCTIONS.md).
 4. To rebuild the distributable AAR from source:
 
 ```bash
