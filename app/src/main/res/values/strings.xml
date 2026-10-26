@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Mispay-android-sdk</string>
+    <string name="demo_ready">Sandbox ready — tap Pay to start a checkout.</string>
 </resources>

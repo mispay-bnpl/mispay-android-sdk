@@ -5,5 +5,11 @@
         <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
     </style>
 
-    <style name="Theme.Mispayandroidsdk" parent="Base.Theme.Mispayandroidsdk" />
+    <!-- minSdk 24 ≥ API 23, so the former values-v23 override lives here directly:
+         transparent system bars for edge-to-edge. -->
+    <style name="Theme.Mispayandroidsdk" parent="Base.Theme.Mispayandroidsdk">
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">?attr/isLightTheme</item>
+    </style>
 </resources>
